@@ -1,9 +1,10 @@
 #include "nemu.h"
+#include <stdlib.h>  
+#include <string.h>   
 
 /* We use the POSIX regex functions to process regular expressions.
  * Type 'man regex' for more information about POSIX regex functions.
  */
-#include<stdlib.h>
 #include <sys/types.h>
 #include <regex.h>
 
@@ -25,25 +26,20 @@ static struct rule {
   char *regex;
   int token_type;
 } rules[] = {
-
-  /* TODO: Add more rules.
-   * Pay attention to the precedence level of different rules.
-   */
-
-  {" +", TK_NOTYPE},    // spaces
-  {"0x[0-9a-fA-F]+|\\d+", TK_NUM}, // decimal and hex numbers
-  {"\\$[a-zA-Z]+", TK_REG},        // registers ($eax, $ebx...)
-  {"==", TK_EQ},         // equal
-  {"!=", TK_NEQ},        // not equal
-  {"&&", TK_AND},        // logical and
-  {"\\|\\|", TK_OR},     // logical or
-  {"!", TK_NOT},         // logical not
-  {"\\+", '+'},          // plus
-  {"-", '-'},            // minus
-  {"\\*", '*'},          // multiply
-  {"/", '/'},            // divide
-  {"\\(", '('},          // left parenthesis
-  {"\\)", ')'},          // right parenthesis
+  {" +", TK_NOTYPE},
+  {"0x[0-9a-fA-F]+|\\d+", TK_NUM},    // 数字必须放前面！
+  {"\\$[a-zA-Z]+", TK_REG},           // 寄存器
+  {"==", TK_EQ},
+  {"!=", TK_NEQ},
+  {"&&", TK_AND},
+  {"\\|\\|", TK_OR},
+  {"!", TK_NOT},
+  {"\\+", '+'},
+  {"-", '-'},
+  {"\\*", '*'},
+  {"/", '/'},
+  {"\\(", '('},
+  {"\\)", ')'}
 };
 
 #define NR_REGEX (sizeof(rules) / sizeof(rules[0]) )
