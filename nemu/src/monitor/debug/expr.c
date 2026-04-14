@@ -1,25 +1,14 @@
 #include "nemu.h"
-#include <stdlib.h>  
-#include <string.h>   
 
-/* We use the POSIX regex functions to process regular expressions.
- * Type 'man regex' for more information about POSIX regex functions.
- */
 #include <sys/types.h>
 #include <regex.h>
+#include <stdlib.h>
+#include <string.h>
 
 enum {
   TK_NOTYPE = 256, TK_EQ,
-
-  /* TODO: Add more token types */
-  TK_NEQ,
-  TK_AND,
-  TK_OR,
-  TK_NOT,
-  TK_NUM,
-  TK_REG,
-  TK_DEREF,
-
+  TK_NEQ, TK_AND, TK_OR, TK_NOT,
+  TK_NUM, TK_REG, TK_DEREF
 };
 
 static struct rule {
@@ -27,8 +16,9 @@ static struct rule {
   int token_type;
 } rules[] = {
   {" +", TK_NOTYPE},
-  {"0x[0-9a-fA-F]+|\\d+", TK_NUM},    // 数字必须放前面！
-  {"\\$[a-zA-Z]+", TK_REG},           // 寄存器
+  {"0x[0-9a-fA-F]+", TK_NUM},
+  {"[0-9]+", TK_NUM},
+  {"\\$eax|\\$ebx|\\$ecx|\\$edx|\\$esp|\\$ebp|\\$esi|\\$edi", TK_REG},
   {"==", TK_EQ},
   {"!=", TK_NEQ},
   {"&&", TK_AND},
@@ -46,16 +36,13 @@ static struct rule {
 
 static regex_t re[NR_REGEX];
 
-/* Rules are used for many times.
- * Therefore we compile them only once before any usage.
- */
 void init_regex() {
   int i;
   char error_msg[128];
   int ret;
 
   for (i = 0; i < NR_REGEX; i ++) {
-    ret = regcomp(&re[i], rules[i].regex, REG_EXTENDED);
+    ret = regcomp(&re[i], rules[i].regex, REG_EXTENDED | REG_ICASE);
     if (ret != 0) {
       regerror(ret, &re[i], error_msg, 128);
       panic("regex compilation failed: %s\n%s", error_msg, rules[i].regex);
@@ -79,31 +66,18 @@ static bool make_token(char *e) {
   nr_token = 0;
 
   while (e[position] != '\0') {
-    /* Try all rules one by one. */
     for (i = 0; i < NR_REGEX; i ++) {
       if (regexec(&re[i], e + position, 1, &pmatch, 0) == 0 && pmatch.rm_so == 0) {
-        char *substr_start = e + position;
-        int substr_len = pmatch.rm_eo;
+        int len = pmatch.rm_eo;
+        int type = rules[i].token_type;
 
-        Log("match rules[%d] = \"%s\" at position %d with len %d: %.*s",
-            i, rules[i].regex, position, substr_len, substr_len, substr_start);
-        position += substr_len;
-
-        /* TODO: Now a new token is recognized with rules[i]. Add codes
-         * to record the token in the array `tokens'. For certain types
-         * of tokens, some extra actions should be performed.
-         */
-
-        switch (rules[i].token_type) {
-          case TK_NOTYPE:
-            break;
-          default:
-            tokens[nr_token].type = rules[i].token_type;
-            strncpy(tokens[nr_token].str, substr_start, substr_len);
-            tokens[nr_token].str[substr_len < 32 ? substr_len : 31] = '\0';
-            nr_token++;
+        if (type != TK_NOTYPE) {
+          tokens[nr_token].type = type;
+          strncpy(tokens[nr_token].str, e+position, len);
+          tokens[nr_token].str[len>31?31:len] = 0;
+          nr_token++;
         }
-
+        position += len;
         break;
       }
     }
@@ -113,22 +87,22 @@ static bool make_token(char *e) {
       return false;
     }
   }
-
   return true;
 }
+
 static bool check_parentheses(int l, int r) {
   if (tokens[l].type != '(' || tokens[r].type != ')') return false;
   int cnt = 0;
-  for (int i = l; i <= r; i++) {
+  for (int i=l; i<=r; i++) {
     if (tokens[i].type == '(') cnt++;
-    else if (tokens[i].type == ')') cnt--;
+    if (tokens[i].type == ')') cnt--;
     if (cnt == 0 && i != r) return false;
   }
   return cnt == 0;
 }
 
-static int get_priority(int op) {
-  switch (op) {
+static int priority(int op) {
+  switch(op) {
     case TK_OR: return 0;
     case TK_AND: return 1;
     case TK_EQ: case TK_NEQ: return 2;
@@ -139,15 +113,15 @@ static int get_priority(int op) {
   }
 }
 
-static int find_dominant_op(int l, int r) {
-  int op = -1, pri = 100, cnt = 0;
-  for (int i = l; i <= r; i++) {
+static int find_op(int l, int r) {
+  int op = -1, pri = 999, cnt = 0;
+  for (int i=l; i<=r; i++) {
     int t = tokens[i].type;
     if (t == '(') cnt++;
-    else if (t == ')') cnt--;
+    if (t == ')') cnt--;
     if (cnt != 0) continue;
 
-    int p = get_priority(t);
+    int p = priority(t);
     if (p < 0) continue;
     if (p <= pri) {
       op = i;
@@ -157,93 +131,74 @@ static int find_dominant_op(int l, int r) {
   return op;
 }
 
-static uint32_t eval(int l, int r, bool *success) {
-  if (l > r) {
-    *success = false;
-    return 0;
-  }
-
+static uint32_t eval(int l, int r, bool *ok) {
+  if (l > r) { *ok = 0; return 0; }
   if (l == r) {
     if (tokens[l].type == TK_NUM) {
-      if (strstr(tokens[l].str, "0x") || strstr(tokens[l].str, "0X")) {
+      if (strstr(tokens[l].str, "0x"))
         return strtoul(tokens[l].str, NULL, 16);
-      } else {
+      else
         return atoi(tokens[l].str);
-      }
     }
     if (tokens[l].type == TK_REG) {
-      for (int i = 0; i < 8; i++) {
-        if (strcmp(regsl[i], tokens[l].str + 1) == 0) {
-          return reg_l(i);
-        }
-      }
-      *success = false;
-      return 0;
+      if (!strcmp(tokens[l].str, "$eax")) return reg_l(0);
+      if (!strcmp(tokens[l].str, "$ecx")) return reg_l(1);
+      if (!strcmp(tokens[l].str, "$edx")) return reg_l(2);
+      if (!strcmp(tokens[l].str, "$ebx")) return reg_l(3);
+      if (!strcmp(tokens[l].str, "$esp")) return reg_l(4);
+      if (!strcmp(tokens[l].str, "$ebp")) return reg_l(5);
+      if (!strcmp(tokens[l].str, "$esi")) return reg_l(6);
+      if (!strcmp(tokens[l].str, "$edi")) return reg_l(7);
     }
-    *success = false;
-    return 0;
+    *ok = 0; return 0;
   }
 
-  if (check_parentheses(l, r)) {
-    return eval(l + 1, r - 1, success);
-  }
+  if (check_parentheses(l, r))
+    return eval(l+1, r-1, ok);
 
-  int op = find_dominant_op(l, r);
-  if (op == -1) {
-    *success = false;
-    return 0;
-  }
+  int op = find_op(l, r);
+  if (op < 0) { *ok = 0; return 0; }
   int t = tokens[op].type;
 
   if (t == TK_NOT || t == TK_DEREF) {
-    uint32_t val = eval(op + 1, r, success);
-    if (!*success) return 0;
-    if (t == TK_NOT) return !val;
-    else return vaddr_read(val, 4);
+    uint32_t v = eval(op+1, r, ok);
+    if (!*ok) return 0;
+    if (t == TK_NOT) return !v;
+    else return vaddr_read(v, 4);
   }
 
-  uint32_t val1 = eval(l, op - 1, success);
-  if (!*success) return 0;
-  uint32_t val2 = eval(op + 1, r, success);
-  if (!*success) return 0;
+  uint32_t v1 = eval(l, op-1, ok);
+  uint32_t v2 = eval(op+1, r, ok);
+  if (!*ok) return 0;
 
-  switch (t) {
-    case '+': return val1 + val2;
-    case '-': return val1 - val2;
-    case '*': return val1 * val2;
-    case '/': return val2 == 0 ? 0 : val1 / val2;
-    case TK_EQ: return val1 == val2;
-    case TK_NEQ: return val1 != val2;
-    case TK_AND: return val1 && val2;
-    case TK_OR: return val1 || val2;
-    default:
-      *success = false;
-      return 0;
+  switch(t) {
+    case '+': return v1 + v2;
+    case '-': return v1 - v2;
+    case '*': return v1 * v2;
+    case '/': return v2 ? v1 / v2 : 0;
+    case TK_EQ: return v1 == v2;
+    case TK_NEQ: return v1 != v2;
+    case TK_AND: return v1 && v2;
+    case TK_OR: return v1 || v2;
+    default: *ok=0; return 0;
   }
 }
 
 uint32_t expr(char *e, bool *success) {
-  if (!make_token(e)) {
-    *success = false;
-    return 0;
-  }
+  *success = true;
+  if (!make_token(e)) { *success = false; return 0; }
 
-  /* TODO: Insert codes to evaluate the expression. */
-  
-  for (int i = 0; i < nr_token; i++) {
+  for (int i=0; i<nr_token; i++) {
     if (tokens[i].type == '*') {
-      if (i == 0) {
-        tokens[i].type = TK_DEREF;
-      } else {
-        int prev_type = tokens[i-1].type;
-        if (prev_type == '+' || prev_type == '-' || prev_type == '*' || prev_type == '/' ||
-            prev_type == '(' || prev_type == TK_EQ || prev_type == TK_NEQ ||
-            prev_type == TK_AND || prev_type == TK_OR || prev_type == TK_NOT) {
+      if (i == 0) tokens[i].type = TK_DEREF;
+      else {
+        int p = tokens[i-1].type;
+        if (p == '+' || p == '-' || p == '*' || p == '/' || p == '(' ||
+            p == TK_EQ || p == TK_NEQ || p == TK_AND || p == TK_OR || p == TK_NOT)
           tokens[i].type = TK_DEREF;
-        }
       }
     }
   }
 
-  return eval(0, nr_token - 1, success);
+  return eval(0, nr_token-1, success);
 }
