@@ -34,20 +34,6 @@ static int cmd_x(char *args) {
     printf("Usage: x N EXPR\n");
     return 0;
   }
-static int cmd_p(char *args) {
-  if (args == NULL) {
-    printf("Usage: p EXPR\n");
-    return 0;
-  }
-  bool success;
-  uint32_t val = expr(args, &success);
-  if (!success) {
-    printf("Invalid expression\n");
-  } else {
-    printf("0x%08x\n", val);
-  }
-  return 0;
-}
 
   int n = atoi(arg1);
   vaddr_t addr;
@@ -104,6 +90,20 @@ static int cmd_q(char *args) {
 }
 
 static int cmd_help(char *args);
+static int cmd_p(char *args) {
+  if (args == NULL) {
+    printf("Usage: p EXPR\n");
+    return 0;
+  }
+  bool success;
+  uint32_t val = expr(args, &success);
+  if (!success) {
+    printf("Invalid expression\n");
+  } else {
+    printf("0x%08x\n", val);
+  }
+  return 0;
+}
 
 static struct {
   char *name;
