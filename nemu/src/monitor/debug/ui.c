@@ -34,6 +34,20 @@ static int cmd_x(char *args) {
     printf("Usage: x N EXPR\n");
     return 0;
   }
+static int cmd_p(char *args) {
+  if (args == NULL) {
+    printf("Usage: p EXPR\n");
+    return 0;
+  }
+  bool success;
+  uint32_t val = expr(args, &success);
+  if (!success) {
+    printf("Invalid expression\n");
+  } else {
+    printf("0x%08x\n", val);
+  }
+  return 0;
+}
 
   int n = atoi(arg1);
   vaddr_t addr;
@@ -102,7 +116,7 @@ static struct {
   {"si", "single step", cmd_si},
   {"info", "info [r|w]", cmd_info},
   {"x", "x N EXPR", cmd_x},
-
+  {"p", "Evaluate expression", cmd_p},
   /* TODO: Add more commands */
 
 };
