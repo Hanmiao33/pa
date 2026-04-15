@@ -20,6 +20,29 @@ void init_wp_pool() {
 }
 
 /* TODO: Implement the functionality of watchpoint */
+WP* new_wp() {
+  assert(free_ != NULL);  
+  WP *p = free_;
+  free_ = free_->next;    
+  p->next = head;         
+  head = p;
+  return p;
+}
+
+void free_wp(WP *wp) {
+  if (head == wp) {
+    head = wp->next;
+  } else {
+    WP *prev = head;
+    while (prev && prev->next != wp) {
+      prev = prev->next;
+    }
+    assert(prev != NULL);
+    prev->next = wp->next;
+  }
+  wp->next = free_;
+  free_ = wp;
+}
 
 // 检查所有监视点，返回是否有变化
 bool check_watchpoints() {
