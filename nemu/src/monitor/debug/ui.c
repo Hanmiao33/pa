@@ -2,6 +2,7 @@
 #include "monitor/expr.h"
 #include "monitor/watchpoint.h"
 #include "nemu.h"
+#include "monitor/watchpoint.h"
 
 #include <stdlib.h>
 #include <readline/readline.h>
@@ -104,6 +105,33 @@ static int cmd_p(char *args) {
   }
   return 0;
 }
+static int cmd_w(char *args) {
+  if (args == NULL) {
+    printf("Usage: w EXPR\n");
+    return 0;
+  }
+  WP *wp = set_watchpoint(args);
+  if (wp == NULL) {
+    printf("Invalid expression\n");
+  } else {
+    printf("Watchpoint %d: %s\n", wp->NO, args);
+  }
+  return 0;
+}
+
+static int cmd_d(char *args) {
+  if (args == NULL) {
+    printf("Usage: d N\n");
+    return 0;
+  }
+  int n = atoi(args);
+  if (delete_watchpoint(n)) {
+    printf("Watchpoint %d deleted.\n", n);
+  } else {
+    printf("Watchpoint %d not found.\n", n);
+  }
+  return 0;
+}
 
 static struct {
   char *name;
@@ -117,6 +145,9 @@ static struct {
   {"info", "info [r|w]", cmd_info},
   {"x", "x N EXPR", cmd_x},
   {"p", "Evaluate expression", cmd_p},
+  {"w", "Set watchpoint", cmd_w},
+  {"d", "Delete watchpoint", cmd_d},
+
   /* TODO: Add more commands */
 
 };
